@@ -1,51 +1,104 @@
-"""
-This module takes care of starting the API Server, Loading the DB and Adding the endpoints
-"""
 import os
-from flask import Flask, request, jsonify, url_for
+from flask import Flask, jsonify
+from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_swagger import swagger
-from flask_cors import CORS
-from utils import APIException, generate_sitemap
-from admin import setup_admin
-from models import db, User
-#from models import Person
+from flask_admin import Admin
+from flask_admin.contrib.sqla import ModelView
+from models import db, User, Personaje, Planeta, Vehiculo, Favorite
 
 app = Flask(__name__)
-app.url_map.strict_slashes = False
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:postgres@localhost/postgres'
 
-db_url = os.getenv("DATABASE_URL")
-if db_url is not None:
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url.replace("postgres://", "postgresql://")
-else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:////tmp/test.db"
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-MIGRATE = Migrate(app, db)
+# Inicializar la base de datos
 db.init_app(app)
-CORS(app)
-setup_admin(app)
 
-# Handle/serialize errors like a JSON object
-@app.errorhandler(APIException)
-def handle_invalid_usage(error):
-    return jsonify(error.to_dict()), error.status_code
+# Configurar Flask-Migrate
+migrate = Migrate(app, db)
 
-# generate sitemap with all your endpoints
-@app.route('/')
-def sitemap():
-    return generate_sitemap(app)
+# Configurar Flask-Admin
+admin = Admin(app, name='hector Admin', template_mode='bootstrap3', url='/admin')
 
-@app.route('/user', methods=['GET'])
-def handle_hello():
+# Agregar vistas de modelos a Flask-Admin
+models = [User, Personaje, Planeta, Vehiculo, Favorite]
 
-    response_body = {
-        "msg": "Hello, this is your GET /user response "
-    }
+for model in models:
+    admin.add_view(ModelView(model, db.session, name=f'{model.__name__} Admin'))
 
-    return jsonify(response_body), 200
+# Rutas para obtener recursos
+@app.route('/<resource_name>', methods=['GET'])
+def get_resources(resource_name):
+    resource_model = globals().get(resource_name, None)
+    
+    if resource_model is None:
+        return jsonify({"message": f"{resource_name} not found"}), 404
 
-# this only runs if `$ python src/app.py` is executed
-if __name__ == '__main__':
-    PORT = int(os.environ.get('PORT', 3000))
-    app.run(host='0.0.0.0', port=PORT, debug=False)
+    resources = resource_model.query.all()
+    return jsonify([resource.serialize() for resource in resources]), 200
+
+@app.route('/<resource_name>/<int:id>', methods=['GET'])
+def get_resource_by_id(resource_name, id):
+    resource_model = globals().get(resource_name, None)
+    
+    if resource_model is None:
+        return jsonify({"message": f"{resource_name} not found"}), 404
+
+    resource = resource_model.query.get(id)
+    if not resource:
+        return jsonify({"message": f"{resource_name} not found"}), 404
+
+    return jsonify(resource.serialize())
+
+# Rutas para agregar recursos a favoritos
+@app.route('/favorite/<resource_name>/<int:resource_id>', methods=['POST'])
+def add_resource_to_favorites(resource_name, resource_id):
+    user_id = 1
+    user = User.query.get(user_id)
+    
+    if user is None:
+        return jsonify({"message": "User not found"}), 404
+
+    resource_model = globals().get(resource_name, None)
+    
+    if resource_model is None:
+        return jsonify({"message": f"{resource_name} not found"}), 404
+
+    resource = resource_model.query.get(resource_id)
+    
+    if resource is None:
+        return jsonify({"message": f"{resource_name} not found"}), 404
+
+    user.add_favorite(resource)
+    db.session.commit()
+
+    return jsonify({"message": f"{resource_name.capitalize()} with ID {resource_id} added to favorites"}), 200
+
+# Rutas para quitar recursos de favoritos
+@app.route('/favorite/<resource_name>/<int:id>', methods=['DELETE'])
+def remove_resource_from_favorites(resource_name, id):
+    user_id = 1
+    user = User.query.get(user_id)
+    
+    if user is None:
+        return jsonify({"message": "User not found"}), 404
+
+    resource_model = globals().get(resource_name, None)
+    
+    if resource_model is None:
+        return jsonify({"message": f"{resource_name} not found"}), 404
+
+    resource = resource_model.query.get(id)
+    
+    if resource is None:
+        return jsonify({"message": f"{resource_name} not found"}), 404
+
+    user.remove_favorite(resource)
+    db.session.commit()
+
+    return jsonify({"message": f"{resource_name.capitalize()} with ID {id} removed from favorites"}), 200
+
+if __name__ == "__main__":
+    with app.app_context():
+        # Crear las tablas si no existen
+        db.create_all()
+      
+    app.run(debug=True)
