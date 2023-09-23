@@ -4,101 +4,101 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
-from models import db, User, Personaje, Planeta, Vehiculo, Favorite
+from models import db, User, Personaje, Planeta, FavoriteCharacter, FavoritePlanet
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:postgres@localhost/postgres'
 
-# Inicializar la base de datos
+
 db.init_app(app)
 
-# Configurar Flask-Migrate
 migrate = Migrate(app, db)
 
-# Configurar Flask-Admin
 admin = Admin(app, name='hector Admin', template_mode='bootstrap3', url='/admin')
 
-# Agregar vistas de modelos a Flask-Admin
-models = [User, Personaje, Planeta, Vehiculo, Favorite]
+models = [User, Personaje, Planeta, FavoriteCharacter, FavoritePlanet]
 
 for model in models:
     admin.add_view(ModelView(model, db.session, name=f'{model.__name__} Admin'))
 
-# Rutas para obtener recursos
-@app.route('/<resource_name>', methods=['GET'])
-def get_resources(resource_name):
-    resource_model = globals().get(resource_name, None)
-    
-    if resource_model is None:
-        return jsonify({"message": f"{resource_name} not found"}), 404
-
-    resources = resource_model.query.all()
-    return jsonify([resource.serialize() for resource in resources]), 200
-
-@app.route('/<resource_name>/<int:id>', methods=['GET'])
-def get_resource_by_id(resource_name, id):
-    resource_model = globals().get(resource_name, None)
-    
-    if resource_model is None:
-        return jsonify({"message": f"{resource_name} not found"}), 404
-
-    resource = resource_model.query.get(id)
-    if not resource:
-        return jsonify({"message": f"{resource_name} not found"}), 404
-
-    return jsonify(resource.serialize())
-
-# Rutas para agregar recursos a favoritos
-@app.route('/favorite/<resource_name>/<int:resource_id>', methods=['POST'])
-def add_resource_to_favorites(resource_name, resource_id):
-    user_id = 1
+@app.route('/favorite/character/<int:character_id>', methods=['POST'])
+def add_character_to_favorites(character_id):
+    user_id = 1  
     user = User.query.get(user_id)
-    
+
     if user is None:
         return jsonify({"message": "User not found"}), 404
 
-    resource_model = globals().get(resource_name, None)
-    
-    if resource_model is None:
-        return jsonify({"message": f"{resource_name} not found"}), 404
+    character = Personaje.query.get(character_id)
 
-    resource = resource_model.query.get(resource_id)
-    
-    if resource is None:
-        return jsonify({"message": f"{resource_name} not found"}), 404
+    if character is None:
+        return jsonify({"message": "Character not found"}), 404
 
-    user.add_favorite(resource)
+    favorite = FavoriteCharacter(user=user, character=character)
+    db.session.add(favorite)
     db.session.commit()
 
-    return jsonify({"message": f"{resource_name.capitalize()} with ID {resource_id} added to favorites"}), 200
+    return jsonify({"message": f"Character with ID {character_id} added to favorites"}), 200
 
-# Rutas para quitar recursos de favoritos
-@app.route('/favorite/<resource_name>/<int:id>', methods=['DELETE'])
-def remove_resource_from_favorites(resource_name, id):
-    user_id = 1
+@app.route('/favorite/character/<int:character_id>', methods=['DELETE'])
+def remove_character_from_favorites(character_id):
+    user_id = 1  
     user = User.query.get(user_id)
-    
+
     if user is None:
         return jsonify({"message": "User not found"}), 404
 
-    resource_model = globals().get(resource_name, None)
-    
-    if resource_model is None:
-        return jsonify({"message": f"{resource_name} not found"}), 404
+    favorite = FavoriteCharacter.query.filter_by(user=user, character_id=character_id).first()
 
-    resource = resource_model.query.get(id)
-    
-    if resource is None:
-        return jsonify({"message": f"{resource_name} not found"}), 404
+    if favorite is None:
+        return jsonify({"message": "Character not found in favorites"}), 404
 
-    user.remove_favorite(resource)
+    db.session.delete(favorite)
     db.session.commit()
 
-    return jsonify({"message": f"{resource_name.capitalize()} with ID {id} removed from favorites"}), 200
+    return jsonify({"message": f"Character with ID {character_id} removed from favorites"}), 200
+
+
+@app.route('/favorite/planet/<int:planet_id>', methods=['POST'])
+def add_planet_to_favorites(planet_id):
+    user_id = 1  
+    user = User.query.get(user_id)
+
+    if user is None:
+        return jsonify({"message": "User not found"}), 404
+
+    planet = Planeta.query.get(planet_id)
+
+    if planet is None:
+        return jsonify({"message": "Planet not found"}), 404
+
+    favorite = FavoritePlanet(user=user, planet=planet)
+    db.session.add(favorite)
+    db.session.commit()
+
+    return jsonify({"message": f"Planet with ID {planet_id} added to favorites"}), 200
+
+@app.route('/favorite/planet/<int:planet_id>', methods=['DELETE'])
+def remove_planet_from_favorites(planet_id):
+    user_id = 1  
+    user = User.query.get(user_id)
+
+    if user is None:
+        return jsonify({"message": "User not found"}), 404
+
+    favorite = FavoritePlanet.query.filter_by(user=user, planet_id=planet_id).first()
+
+    if favorite is None:
+        return jsonify({"message": "Planet not found in favorites"}), 404
+
+    db.session.delete(favorite)
+    db.session.commit()
+
+    return jsonify({"message": f"Planet with ID {planet_id} removed from favorites"}), 200
 
 if __name__ == "__main__":
     with app.app_context():
-        # Crear las tablas si no existen
+        
         db.create_all()
       
     app.run(debug=True)
